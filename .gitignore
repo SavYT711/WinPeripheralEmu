@@ -1,3 +1,11 @@
 bin/
 obj/
 debug.log
+debug.log.old
+
+# Inno Setup build output - the installer is ~50 MB, it belongs on a
+# GitHub Release rather than in the repository.
+installer_output/
+
+.vs/
+*.user
