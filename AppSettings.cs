@@ -32,6 +32,13 @@ sealed class AppSettings
     public int ReturnHotkeyVk { get; set; } = (int)Keys.F9;
 
     /// <summary>
+    /// Virtual-key code that types the Windows clipboard out on the iPad.
+    /// Deliberately not Ctrl+V, which stays free to reach the iPad's own
+    /// clipboard. Defaults to F10.
+    /// </summary>
+    public int PasteHotkeyVk { get; set; } = (int)Keys.F10;
+
+    /// <summary>
     /// Return control automatically when the tracked pointer comes back past
     /// the edge it left from.
     /// </summary>

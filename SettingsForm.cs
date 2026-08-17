@@ -3,167 +3,154 @@ using System.Windows.Forms;
 namespace BlePeripheralEmu;
 
 /// <summary>
-/// Setup dialog: which screen edge hands off, the return-to-Windows hotkey,
-/// auto-return behaviour and scroll direction. Shown automatically on first
-/// run and on demand from the tray menu afterwards.
+/// Setup dialog: the handoff edge and how hard to push it, the hotkeys, and
+/// pointer/scroll behaviour. Shown automatically on first run and on demand
+/// from the tray menu afterwards.
+///
+/// Tabbed rather than one long column - the single-column version had reached
+/// 665px and every new setting made it worse.
 /// </summary>
 sealed class SettingsForm : Form
 {
+    enum Capturing { None, Return, Paste }
+
     readonly AppSettings _settings;
     readonly RadioButton _rbLeft, _rbRight, _rbTop, _rbBottom;
-    readonly Label _hotkeyLabel;
-    readonly Button _setHotkeyButton;
+    readonly TrackBar _edgePushBar;
     readonly CheckBox _autoReturnCheck;
     readonly TrackBar _travelBar;
-    readonly TrackBar _edgePushBar;
+    readonly Label _returnHotkeyLabel, _pasteHotkeyLabel;
+    readonly Button _setReturnHotkeyButton, _setPasteHotkeyButton;
+    readonly TrackBar _mouseSpeedBar, _scrollSpeedBar;
     readonly CheckBox _invertScrollCheck;
-    readonly TrackBar _mouseSpeedBar;
-    readonly TrackBar _scrollSpeedBar;
 
-    bool _capturingHotkey;
-    Keys _hotkey;
+    Capturing _capturing = Capturing.None;
+    Keys _returnHotkey, _pasteHotkey;
 
     public SettingsForm(AppSettings settings, bool firstRun)
     {
         _settings = settings;
-        _hotkey = (Keys)settings.ReturnHotkeyVk;
+        _returnHotkey = (Keys)settings.ReturnHotkeyVk;
+        _pasteHotkey = (Keys)settings.PasteHotkeyVk;
 
         Text = firstRun ? "BlePeripheralEmu Setup" : "BlePeripheralEmu Settings";
-        ClientSize = new Size(380, 665);
+        ClientSize = new Size(392, 400);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         ShowInTaskbar = true;
 
-        var edgeGroup = new GroupBox { Text = "Which edge hands off to the iPad?", Left = 15, Top = 15, Width = 350, Height = 160 };
-        _rbLeft = new RadioButton { Text = "Left", Left = 15, Top = 25, Width = 150, Checked = settings.Edge == ScreenEdge.Left };
-        _rbRight = new RadioButton { Text = "Right", Left = 15, Top = 55, Width = 150, Checked = settings.Edge == ScreenEdge.Right };
-        _rbTop = new RadioButton { Text = "Top", Left = 180, Top = 25, Width = 150, Checked = settings.Edge == ScreenEdge.Top };
-        _rbBottom = new RadioButton { Text = "Bottom", Left = 180, Top = 55, Width = 150, Checked = settings.Edge == ScreenEdge.Bottom };
+        // --- Handoff tab ---
+        var handoff = new TabPage("Handoff");
 
-        var pushLabel = new Label { Text = "How hard to push against it:", Left = 15, Top = 90, Width = 200 };
-        var pushValue = new Label { Left = 235, Top = 90, Width = 100, TextAlign = ContentAlignment.TopRight };
-        _edgePushBar = new TrackBar
-        {
-            AutoSize = false,
-            Left = 15,
-            Top = 110,
-            Width = 320,
-            Height = 38,
-            Minimum = AppSettings.MinEdgePush,
-            Maximum = AppSettings.MaxEdgePush,
-            TickFrequency = 50,
-            SmallChange = 10,
-            LargeChange = 50,
-            Value = Math.Clamp(settings.EdgePushCounts, AppSettings.MinEdgePush, AppSettings.MaxEdgePush)
-        };
+        _rbLeft = new RadioButton { Text = "Left", Left = 14, Top = 34, Width = 150, Checked = settings.Edge == ScreenEdge.Left };
+        _rbRight = new RadioButton { Text = "Right", Left = 14, Top = 59, Width = 150, Checked = settings.Edge == ScreenEdge.Right };
+        _rbTop = new RadioButton { Text = "Top", Left = 180, Top = 34, Width = 150, Checked = settings.Edge == ScreenEdge.Top };
+        _rbBottom = new RadioButton { Text = "Bottom", Left = 180, Top = 59, Width = 150, Checked = settings.Edge == ScreenEdge.Bottom };
+
+        var pushValue = new Label { Left = 240, Top = 92, Width = 100, TextAlign = ContentAlignment.TopRight };
+        _edgePushBar = MakeBar(settings.EdgePushCounts, AppSettings.MinEdgePush, AppSettings.MaxEdgePush, 50, 10, 112);
         _edgePushBar.ValueChanged += (_, _) => pushValue.Text = $"{_edgePushBar.Value}";
         pushValue.Text = $"{_edgePushBar.Value}";
 
-        edgeGroup.Controls.AddRange(new Control[]
-        {
-            _rbLeft, _rbRight, _rbTop, _rbBottom, pushLabel, pushValue, _edgePushBar
-        });
-
-        var hotkeyGroup = new GroupBox { Text = "Return-to-Windows key", Left = 15, Top = 185, Width = 350, Height = 85 };
-        _hotkeyLabel = new Label { Text = $"Current: {_hotkey}", Left = 15, Top = 25, Width = 315 };
-        _setHotkeyButton = new Button { Text = "Click, then press a key...", Left = 15, Top = 48, Width = 190 };
-        _setHotkeyButton.Click += (_, _) =>
-        {
-            _capturingHotkey = true;
-            _hotkeyLabel.Text = "Press any key now (Esc to cancel)...";
-            // Disabled while capturing so the button itself can't intercept
-            // Enter/Space as a click before the key reaches ProcessCmdKey.
-            _setHotkeyButton.Enabled = false;
-        };
-        hotkeyGroup.Controls.AddRange(new Control[] { _hotkeyLabel, _setHotkeyButton });
-
-        var returnGroup = new GroupBox { Text = "Auto-return", Left = 15, Top = 280, Width = 350, Height = 150 };
         _autoReturnCheck = new CheckBox
         {
-            Text = "Return when the pointer comes back to this edge",
-            Left = 15,
-            Top = 22,
-            Width = 320,
+            Text = "Return when the pointer is pushed back to this edge",
+            Left = 14,
+            Top = 168,
+            Width = 330,
             Checked = settings.AutoReturnEnabled
         };
 
-        var travelLabel = new Label { Text = "iPad screen width:", Left = 32, Top = 52, Width = 150 };
-        var travelValue = new Label { Left = 235, Top = 52, Width = 100, TextAlign = ContentAlignment.TopRight };
-        _travelBar = new TrackBar
-        {
-            AutoSize = false,
-            Left = 30,
-            Top = 72,
-            Width = 305,
-            Height = 38,
-            Minimum = AppSettings.MinTravelCounts,
-            Maximum = AppSettings.MaxTravelCounts,
-            TickFrequency = 1000,
-            SmallChange = 100,
-            LargeChange = 500,
-            Value = Math.Clamp(settings.VirtualTravelCounts, AppSettings.MinTravelCounts, AppSettings.MaxTravelCounts)
-        };
+        var travelLabel = new Label { Text = "iPad screen width:", Left = 30, Top = 198, Width = 150 };
+        var travelValue = new Label { Left = 240, Top = 198, Width = 100, TextAlign = ContentAlignment.TopRight };
+        _travelBar = MakeBar(settings.VirtualTravelCounts, AppSettings.MinTravelCounts, AppSettings.MaxTravelCounts, 1000, 100, 218);
+        _travelBar.Left = 30;
+        _travelBar.Width = 310;
         _travelBar.ValueChanged += (_, _) => travelValue.Text = $"{_travelBar.Value}";
         travelValue.Text = $"{_travelBar.Value}";
 
-        var travelHint = new Label
-        {
-            Text = "Lower this if control comes back too late.",
-            Left = 32,
-            Top = 115,
-            Width = 300,
-            ForeColor = SystemColors.GrayText
-        };
-
         _autoReturnCheck.CheckedChanged += (_, _) =>
         {
-            _travelBar.Enabled = _autoReturnCheck.Checked;
-            travelLabel.Enabled = _autoReturnCheck.Checked;
-            travelValue.Enabled = _autoReturnCheck.Checked;
+            _travelBar.Enabled = travelLabel.Enabled = travelValue.Enabled = _autoReturnCheck.Checked;
         };
-        _travelBar.Enabled = _autoReturnCheck.Checked;
-        travelLabel.Enabled = _autoReturnCheck.Checked;
-        travelValue.Enabled = _autoReturnCheck.Checked;
-        returnGroup.Controls.AddRange(new Control[] { _autoReturnCheck, travelLabel, travelValue, _travelBar, travelHint });
+        _travelBar.Enabled = travelLabel.Enabled = travelValue.Enabled = _autoReturnCheck.Checked;
 
-        var speedGroup = new GroupBox { Text = "Speed", Left = 15, Top = 440, Width = 350, Height = 150 };
+        handoff.Controls.AddRange(new Control[]
+        {
+            new Label { Text = "Which edge hands off to the iPad?", Left = 14, Top = 12, Width = 330 },
+            _rbLeft, _rbRight, _rbTop, _rbBottom,
+            new Label { Text = "How hard to push against it:", Left = 14, Top = 92, Width = 220 },
+            pushValue, _edgePushBar,
+            Hint("Touching the edge does nothing until you push past this.", 14, 140),
+            _autoReturnCheck, travelLabel, travelValue, _travelBar,
+            Hint("Lower this if control comes back too late.", 30, 260)
+        });
 
-        var mouseSpeedValue = new Label { Left = 250, Top = 22, Width = 85, TextAlign = ContentAlignment.TopRight };
-        _mouseSpeedBar = MakeSpeedBar(settings.MouseSensitivityPercent, 40);
+        // --- Keys tab ---
+        var keys = new TabPage("Keys");
+
+        _returnHotkeyLabel = new Label { Text = $"Current: {_returnHotkey}", Left = 14, Top = 34, Width = 330 };
+        _setReturnHotkeyButton = new Button { Text = "Click, then press a key...", Left = 14, Top = 56, Width = 190 };
+        _setReturnHotkeyButton.Click += (_, _) => BeginCapture(Capturing.Return);
+
+        _pasteHotkeyLabel = new Label { Text = $"Current: {_pasteHotkey}", Left = 14, Top = 124, Width = 330 };
+        _setPasteHotkeyButton = new Button { Text = "Click, then press a key...", Left = 14, Top = 146, Width = 190 };
+        _setPasteHotkeyButton.Click += (_, _) => BeginCapture(Capturing.Paste);
+
+        keys.Controls.AddRange(new Control[]
+        {
+            new Label { Text = "Return to Windows", Left = 14, Top = 12, Width = 330, Font = new Font(Font, FontStyle.Bold) },
+            _returnHotkeyLabel, _setReturnHotkeyButton,
+            new Label { Text = "Paste clipboard to iPad", Left = 14, Top = 102, Width = 330, Font = new Font(Font, FontStyle.Bold) },
+            _pasteHotkeyLabel, _setPasteHotkeyButton,
+            Hint("Types the Windows clipboard out on the iPad. Plain ASCII only,\n" +
+                 "at typing speed, and it assumes the iPad uses a US layout.\n" +
+                 "The iPad's own clipboard is untouched, so Ctrl+V still works\n" +
+                 "there. Copying the other way isn't possible over Bluetooth HID.",
+                 14, 188, 100)
+        });
+
+        // --- Pointer tab ---
+        var pointer = new TabPage("Pointer");
+
+        var mouseSpeedValue = new Label { Left = 240, Top = 12, Width = 100, TextAlign = ContentAlignment.TopRight };
+        _mouseSpeedBar = MakeBar(settings.MouseSensitivityPercent, AppSettings.MinSpeedPercent, AppSettings.MaxSpeedPercent, 25, 5, 32);
         _mouseSpeedBar.ValueChanged += (_, _) => mouseSpeedValue.Text = FormatSpeed(_mouseSpeedBar.Value);
         mouseSpeedValue.Text = FormatSpeed(_mouseSpeedBar.Value);
 
-        var scrollSpeedValue = new Label { Left = 250, Top = 80, Width = 85, TextAlign = ContentAlignment.TopRight };
-        _scrollSpeedBar = MakeSpeedBar(settings.ScrollSpeedPercent, 98);
+        var scrollSpeedValue = new Label { Left = 240, Top = 82, Width = 100, TextAlign = ContentAlignment.TopRight };
+        _scrollSpeedBar = MakeBar(settings.ScrollSpeedPercent, AppSettings.MinSpeedPercent, AppSettings.MaxSpeedPercent, 25, 5, 102);
         _scrollSpeedBar.ValueChanged += (_, _) => scrollSpeedValue.Text = FormatSpeed(_scrollSpeedBar.Value);
         scrollSpeedValue.Text = FormatSpeed(_scrollSpeedBar.Value);
-
-        speedGroup.Controls.AddRange(new Control[]
-        {
-            new Label { Text = "Pointer speed", Left = 15, Top = 22, Width = 200 },
-            mouseSpeedValue,
-            _mouseSpeedBar,
-            new Label { Text = "Scroll speed", Left = 15, Top = 80, Width = 200 },
-            scrollSpeedValue,
-            _scrollSpeedBar
-        });
 
         _invertScrollCheck = new CheckBox
         {
             Text = "Reverse scroll direction (both axes)",
-            Left = 30,
-            Top = 600,
-            Width = 300,
+            Left = 14,
+            Top = 160,
+            Width = 330,
             Checked = settings.InvertScroll
         };
+
+        pointer.Controls.AddRange(new Control[]
+        {
+            new Label { Text = "Pointer speed", Left = 14, Top = 12, Width = 200 },
+            mouseSpeedValue, _mouseSpeedBar,
+            new Label { Text = "Scroll speed", Left = 14, Top = 82, Width = 200 },
+            scrollSpeedValue, _scrollSpeedBar,
+            _invertScrollCheck
+        });
+
+        var tabs = new TabControl { Left = 12, Top = 12, Width = 368, Height = 330 };
+        tabs.TabPages.AddRange(new[] { handoff, keys, pointer });
 
         var okButton = new Button
         {
             Text = firstRun ? "Start" : "Save",
-            Left = 270,
-            Top = 628,
+            Left = 285,
+            Top = 355,
             Width = 95,
             DialogResult = DialogResult.OK
         };
@@ -172,8 +159,8 @@ sealed class SettingsForm : Form
         var cancelButton = new Button
         {
             Text = "Cancel",
-            Left = 165,
-            Top = 628,
+            Left = 180,
+            Top = 355,
             Width = 95,
             DialogResult = DialogResult.Cancel
         };
@@ -181,30 +168,49 @@ sealed class SettingsForm : Form
         AcceptButton = okButton;
         CancelButton = cancelButton;
 
-        Controls.AddRange(new Control[]
-        {
-            edgeGroup, hotkeyGroup, returnGroup, speedGroup, _invertScrollCheck, okButton, cancelButton
-        });
+        Controls.AddRange(new Control[] { tabs, okButton, cancelButton });
     }
 
-    static TrackBar MakeSpeedBar(int value, int top) => new()
+    static Label Hint(string text, int left, int top, int height = 20) => new()
+    {
+        Text = text,
+        Left = left,
+        Top = top,
+        Width = 330,
+        Height = height,
+        ForeColor = SystemColors.GrayText
+    };
+
+    static TrackBar MakeBar(int value, int min, int max, int tickFrequency, int smallChange, int top) => new()
     {
         // TrackBar.AutoSize defaults to true and forces its own height,
         // silently ignoring the one set here.
         AutoSize = false,
-        Left = 15,
+        Left = 14,
         Top = top,
-        Width = 320,
+        Width = 326,
         Height = 38,
-        Minimum = AppSettings.MinSpeedPercent,
-        Maximum = AppSettings.MaxSpeedPercent,
-        TickFrequency = 25,
-        SmallChange = 5,
-        LargeChange = 25,
-        Value = Math.Clamp(value, AppSettings.MinSpeedPercent, AppSettings.MaxSpeedPercent)
+        Minimum = min,
+        Maximum = max,
+        TickFrequency = tickFrequency,
+        SmallChange = smallChange,
+        LargeChange = tickFrequency,
+        Value = Math.Clamp(value, min, max)
     };
 
     static string FormatSpeed(int percent) => percent == 100 ? "1.00x (default)" : $"{percent / 100.0:0.00}x";
+
+    void BeginCapture(Capturing which)
+    {
+        _capturing = which;
+        // Disabled while capturing so the button itself can't intercept
+        // Enter/Space as a click before the key reaches ProcessCmdKey.
+        _setReturnHotkeyButton.Enabled = false;
+        _setPasteHotkeyButton.Enabled = false;
+
+        var label = which == Capturing.Return ? _returnHotkeyLabel : _pasteHotkeyLabel;
+        label.Text = "Press any key now (Esc to cancel)...";
+    }
 
     /// <summary>
     /// Hotkey capture happens here rather than in KeyDown so that dialog keys
@@ -214,34 +220,50 @@ sealed class SettingsForm : Form
     /// </summary>
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        if (!_capturingHotkey || (msg.Msg != NativeMethods.WM_KEYDOWN && msg.Msg != NativeMethods.WM_SYSKEYDOWN))
+        if (_capturing == Capturing.None ||
+            (msg.Msg != NativeMethods.WM_KEYDOWN && msg.Msg != NativeMethods.WM_SYSKEYDOWN))
             return base.ProcessCmdKey(ref msg, keyData);
 
         var key = keyData & Keys.KeyCode;
 
         if (key == Keys.Escape)
         {
-            EndCapture($"Current: {_hotkey}");
+            EndCapture();
             return true;
         }
 
         if (IsModifierKey(key))
         {
-            _hotkeyLabel.Text = "Modifier keys can't be used on their own - try another key.";
+            var label = _capturing == Capturing.Return ? _returnHotkeyLabel : _pasteHotkeyLabel;
+            label.Text = "Modifier keys can't be used on their own - try another key.";
             return true;
         }
 
-        _hotkey = key;
-        Logger.Log($"[captured hotkey: {_hotkey} = 0x{(int)_hotkey:X2}]");
-        EndCapture($"Current: {_hotkey}");
+        // The two hotkeys must stay distinct, or whichever is checked first in
+        // the keyboard hook would shadow the other entirely.
+        var other = _capturing == Capturing.Return ? _pasteHotkey : _returnHotkey;
+        if (key == other)
+        {
+            var label = _capturing == Capturing.Return ? _returnHotkeyLabel : _pasteHotkeyLabel;
+            label.Text = $"{key} is already the other hotkey - pick a different key.";
+            return true;
+        }
+
+        if (_capturing == Capturing.Return) _returnHotkey = key;
+        else _pasteHotkey = key;
+
+        Logger.Log($"[captured {_capturing} hotkey: {key} = 0x{(int)key:X2}]");
+        EndCapture();
         return true;
     }
 
-    void EndCapture(string label)
+    void EndCapture()
     {
-        _capturingHotkey = false;
-        _hotkeyLabel.Text = label;
-        _setHotkeyButton.Enabled = true;
+        _capturing = Capturing.None;
+        _returnHotkeyLabel.Text = $"Current: {_returnHotkey}";
+        _pasteHotkeyLabel.Text = $"Current: {_pasteHotkey}";
+        _setReturnHotkeyButton.Enabled = true;
+        _setPasteHotkeyButton.Enabled = true;
     }
 
     static bool IsModifierKey(Keys key) => key is Keys.ShiftKey or Keys.ControlKey or Keys.Menu
@@ -256,18 +278,20 @@ sealed class SettingsForm : Form
                        : _rbTop.Checked ? ScreenEdge.Top
                        : _rbBottom.Checked ? ScreenEdge.Bottom
                        : ScreenEdge.Right;
-        _settings.ReturnHotkeyVk = (int)_hotkey;
+        _settings.EdgePushCounts = _edgePushBar.Value;
+        _settings.ReturnHotkeyVk = (int)_returnHotkey;
+        _settings.PasteHotkeyVk = (int)_pasteHotkey;
         _settings.AutoReturnEnabled = _autoReturnCheck.Checked;
         _settings.VirtualTravelCounts = _travelBar.Value;
-        _settings.EdgePushCounts = _edgePushBar.Value;
-        _settings.InvertScroll = _invertScrollCheck.Checked;
         _settings.MouseSensitivityPercent = _mouseSpeedBar.Value;
         _settings.ScrollSpeedPercent = _scrollSpeedBar.Value;
+        _settings.InvertScroll = _invertScrollCheck.Checked;
         _settings.Save();
 
-        Logger.Log($"[settings applied - edge: {_settings.Edge}, return key: {_hotkey}, " +
+        Logger.Log($"[settings applied - edge: {_settings.Edge} (push {_settings.EdgePushCounts}), " +
+                   $"return: {_returnHotkey}, paste: {_pasteHotkey}, " +
                    $"auto-return: {_settings.AutoReturnEnabled} (travel {_settings.VirtualTravelCounts}), " +
-                   $"invert scroll: {_settings.InvertScroll}, " +
-                   $"pointer {_settings.MouseSensitivityPercent}%, scroll {_settings.ScrollSpeedPercent}%]");
+                   $"pointer {_settings.MouseSensitivityPercent}%, scroll {_settings.ScrollSpeedPercent}%, " +
+                   $"invert scroll: {_settings.InvertScroll}]");
     }
 }

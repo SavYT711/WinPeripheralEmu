@@ -107,6 +107,11 @@ sealed class InputBridgeForm : Form
 
     SuppressionOverlayForm? _suppressionOverlay;
 
+    // Clipboard-to-iPad typing. Cancelled on return, disconnect and exit, so a
+    // long paste can't outlive the session that started it.
+    CancellationTokenSource? _pasteCts;
+    bool _pasting;
+
     // Sub-unit remainders from the sensitivity multiplier, kept so slow
     // movement at low sensitivity isn't truncated away to nothing.
     double _mouseRemainderX, _mouseRemainderY;
@@ -486,6 +491,8 @@ sealed class InputBridgeForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        CancelClipboardPaste();
+
         // Release everything on the host before the link goes away, otherwise
         // a key or button held at exit stays stuck down on the iPad.
         if (_redirected)
@@ -696,6 +703,82 @@ sealed class InputBridgeForm : Form
         ShowSuppressionOverlay();
         UpdateStatusTextAsync();
         Logger.Log($"[handed off to iPad - press {(Keys)_settings.ReturnHotkeyVk} to return]");
+    }
+
+    /// <summary>
+    /// Kicks off typing the clipboard to the iPad. Called from the keyboard
+    /// hook, so it hands straight off to a background task rather than reading
+    /// the clipboard or typing inline - either would block the hook long enough
+    /// for Windows to uninstall it.
+    /// </summary>
+    void StartClipboardPaste()
+    {
+        // Latched here, in the hook, rather than in the deferred work below:
+        // otherwise a double tap of the hotkey queues two pastes before the
+        // first has had a chance to set the flag.
+        if (_pasting) return;
+        _pasting = true;
+
+        try { BeginInvoke(new Action(RunClipboardPaste)); }
+        catch (ObjectDisposedException) { _pasting = false; }
+        catch (InvalidOperationException) { _pasting = false; }
+    }
+
+    async void RunClipboardPaste()
+    {
+        try
+        {
+            string? text = ClipboardTyper.ReadText();
+            if (string.IsNullOrEmpty(text))
+            {
+                Logger.Log("[paste: clipboard has no text]");
+                _trayIcon?.ShowBalloonTip(2500, "BlePeripheralEmu",
+                    "Nothing to paste - the clipboard has no text.", ToolTipIcon.Info);
+                return;
+            }
+
+            bool truncated = text.Length > ClipboardTyper.MaxChars;
+            int count = Math.Min(text.Length, ClipboardTyper.MaxChars);
+
+            _pasteCts = new CancellationTokenSource();
+            Logger.Log($"[paste: typing {count} character(s){(truncated ? " (truncated)" : "")}]");
+            _trayIcon?.ShowBalloonTip(3000, "BlePeripheralEmu",
+                $"Typing {count} characters to the iPad - press {(Keys)_settings.ReturnHotkeyVk} to stop.",
+                ToolTipIcon.Info);
+
+            int skipped = await ClipboardTyper.TypeAsync(text, _keyboardPump, _pasteCts.Token);
+            Logger.Log(skipped > 0
+                ? $"[paste: done, {skipped} character(s) had no HID equivalent and were skipped]"
+                : "[paste: done]");
+
+            if (skipped > 0)
+                _trayIcon?.ShowBalloonTip(4000, "BlePeripheralEmu",
+                    $"{skipped} character(s) couldn't be typed - only plain ASCII can be sent over HID.",
+                    ToolTipIcon.Warning);
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.Log("[paste: cancelled]");
+        }
+        catch (Exception ex)
+        {
+            // async void - anything escaping here reaches the thread-exception
+            // handler, which exits the process.
+            Logger.Log($"[paste failed: {ex.GetType().Name} {ex.Message}]");
+        }
+        finally
+        {
+            _pasting = false;
+            _pasteCts?.Dispose();
+            _pasteCts = null;
+            _keyboardPump.Post(0, Array.Empty<byte>()); // never leave a key held
+        }
+    }
+
+    void CancelClipboardPaste()
+    {
+        try { _pasteCts?.Cancel(); }
+        catch (ObjectDisposedException) { }
     }
 
     void ShowSuppressionOverlay()
@@ -953,8 +1036,9 @@ sealed class InputBridgeForm : Form
         _redirected = false;
 
         // Single choke point for the hotkey, auto-return and BLE-disconnect
-        // paths, so taking the overlay down here covers all three.
+        // paths, so tearing these down here covers all three.
         HideSuppressionOverlay();
+        CancelClipboardPaste();
 
         // Any key still physically held was swallowed on the way down; swallow
         // its key-up too so Windows doesn't see an orphaned release.
@@ -1108,8 +1192,8 @@ sealed class InputBridgeForm : Form
             return (IntPtr)1;
         }
 
-        // The configured return hotkey only does anything while redirected -
-        // otherwise it behaves as a normal key for local use.
+        // The configured hotkeys only do anything while redirected - otherwise
+        // they behave as normal keys for local use.
         if (vk == _settings.ReturnHotkeyVk && isDown && _redirected)
         {
             _suppressUpVks.Add(vk);
@@ -1117,8 +1201,20 @@ sealed class InputBridgeForm : Form
             return (IntPtr)1;
         }
 
+        if (vk == _settings.PasteHotkeyVk && isDown && _redirected)
+        {
+            _suppressUpVks.Add(vk);
+            StartClipboardPaste();
+            return (IntPtr)1;
+        }
+
         if (_redirected)
         {
+            // Keys pressed mid-paste would interleave with the characters being
+            // typed and corrupt them. Swallow them; the return hotkey above
+            // still works and cancels the paste.
+            if (_pasting) return (IntPtr)1;
+
             if (isDown || isUp)
             {
                 UpdateModifier(vk, isDown);

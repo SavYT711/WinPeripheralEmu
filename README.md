@@ -34,6 +34,22 @@ Because the iPad never reports its pointer position back, the position on the
 far side is dead-reckoned from the deltas already sent, and clamped to a
 configurable travel distance. Scrolling never moves that estimate.
 
+### Clipboard
+
+A second hotkey (F10 by default) types the Windows clipboard out on the iPad.
+This is one-directional and deliberately not a real clipboard sync — over BLE
+HID the PC is a *peripheral*, and the only host-to-device channel the profile
+offers is the keyboard output report, one byte of LED state. The iPad has no way
+to hand anything back, so copying from the iPad to Windows would need software
+running on the iPad and a separate transport.
+
+Because it works by synthesising keystrokes: plain ASCII only (the keyboard
+collection declares usages 0–101, so accented characters, emoji and non-Latin
+scripts are dropped), capped at 2000 characters, sent at typing speed, and the
+mapping assumes the iPad is set to a US keyboard layout. The return hotkey
+cancels a paste in progress. Ctrl+V is left alone, so the iPad's own clipboard
+still works normally.
+
 ### Why the invisible overlay
 
 A `WH_MOUSE_LL` hook can only suppress the legacy message pipeline. Windows

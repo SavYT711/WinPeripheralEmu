@@ -95,6 +95,19 @@ abstract class ReportPumpBase : IDisposable
     /// <summary>Called under <see cref="Gate"/>.</summary>
     protected abstract bool IsEmpty { get; }
 
+    /// <summary>Called under <see cref="Gate"/>.</summary>
+    protected abstract int QueueDepth { get; }
+
+    /// <summary>
+    /// How many reports are waiting to go out. Used to pace bulk senders - the
+    /// queue drops its oldest entry when full, so anything generating reports
+    /// faster than the link drains them has to throttle itself.
+    /// </summary>
+    public int PendingCount
+    {
+        get { lock (Gate) return QueueDepth; }
+    }
+
     /// <summary>Wakes the pump. Callers must not hold <see cref="Gate"/>.</summary>
     protected void Signal()
     {
@@ -236,6 +249,8 @@ sealed class MouseReportPump : ReportPumpBase
 
     protected override bool IsEmpty => _queue.Count == 0;
 
+    protected override int QueueDepth => _queue.Count;
+
     protected override bool TryDequeue(out byte[] report)
     {
         report = Array.Empty<byte>();
@@ -302,6 +317,8 @@ sealed class KeyboardReportPump : ReportPumpBase
     }
 
     protected override bool IsEmpty => _queue.Count == 0;
+
+    protected override int QueueDepth => _queue.Count;
 
     protected override bool TryDequeue(out byte[] report)
     {
