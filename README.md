@@ -35,24 +35,6 @@ matches the physical display rather than the reported resolution.
 - A Bluetooth adapter that supports the peripheral role
 - .NET 8 SDK to build
 
-## Build and run
-
-```bash
-dotnet run
-```
-
-## Publish a single-file executable
-
-```bash
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-```
-
-## Build the installer
-
-Compile [installer.iss](installer.iss) with the free
-[Inno Setup Compiler](https://jrsoftware.org/isinfo.php) after publishing. Output
-lands in `installer_output/` (git-ignored — upload it as a release asset).
-
 ## Settings and diagnostics
 
 - Settings and calibration: `%APPDATA%\BlePeripheralEmu\settings.json`.
