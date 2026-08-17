@@ -15,6 +15,7 @@ sealed class SettingsForm : Form
     readonly Button _setHotkeyButton;
     readonly CheckBox _autoReturnCheck;
     readonly TrackBar _travelBar;
+    readonly TrackBar _edgePushBar;
     readonly CheckBox _invertScrollCheck;
     readonly TrackBar _mouseSpeedBar;
     readonly TrackBar _scrollSpeedBar;
@@ -28,21 +29,44 @@ sealed class SettingsForm : Form
         _hotkey = (Keys)settings.ReturnHotkeyVk;
 
         Text = firstRun ? "BlePeripheralEmu Setup" : "BlePeripheralEmu Settings";
-        ClientSize = new Size(380, 595);
+        ClientSize = new Size(380, 665);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         ShowInTaskbar = true;
 
-        var edgeGroup = new GroupBox { Text = "Which edge hands off to the iPad?", Left = 15, Top = 15, Width = 350, Height = 90 };
+        var edgeGroup = new GroupBox { Text = "Which edge hands off to the iPad?", Left = 15, Top = 15, Width = 350, Height = 160 };
         _rbLeft = new RadioButton { Text = "Left", Left = 15, Top = 25, Width = 150, Checked = settings.Edge == ScreenEdge.Left };
         _rbRight = new RadioButton { Text = "Right", Left = 15, Top = 55, Width = 150, Checked = settings.Edge == ScreenEdge.Right };
         _rbTop = new RadioButton { Text = "Top", Left = 180, Top = 25, Width = 150, Checked = settings.Edge == ScreenEdge.Top };
         _rbBottom = new RadioButton { Text = "Bottom", Left = 180, Top = 55, Width = 150, Checked = settings.Edge == ScreenEdge.Bottom };
-        edgeGroup.Controls.AddRange(new Control[] { _rbLeft, _rbRight, _rbTop, _rbBottom });
 
-        var hotkeyGroup = new GroupBox { Text = "Return-to-Windows key", Left = 15, Top = 115, Width = 350, Height = 85 };
+        var pushLabel = new Label { Text = "How hard to push against it:", Left = 15, Top = 90, Width = 200 };
+        var pushValue = new Label { Left = 235, Top = 90, Width = 100, TextAlign = ContentAlignment.TopRight };
+        _edgePushBar = new TrackBar
+        {
+            AutoSize = false,
+            Left = 15,
+            Top = 110,
+            Width = 320,
+            Height = 38,
+            Minimum = AppSettings.MinEdgePush,
+            Maximum = AppSettings.MaxEdgePush,
+            TickFrequency = 50,
+            SmallChange = 10,
+            LargeChange = 50,
+            Value = Math.Clamp(settings.EdgePushCounts, AppSettings.MinEdgePush, AppSettings.MaxEdgePush)
+        };
+        _edgePushBar.ValueChanged += (_, _) => pushValue.Text = $"{_edgePushBar.Value}";
+        pushValue.Text = $"{_edgePushBar.Value}";
+
+        edgeGroup.Controls.AddRange(new Control[]
+        {
+            _rbLeft, _rbRight, _rbTop, _rbBottom, pushLabel, pushValue, _edgePushBar
+        });
+
+        var hotkeyGroup = new GroupBox { Text = "Return-to-Windows key", Left = 15, Top = 185, Width = 350, Height = 85 };
         _hotkeyLabel = new Label { Text = $"Current: {_hotkey}", Left = 15, Top = 25, Width = 315 };
         _setHotkeyButton = new Button { Text = "Click, then press a key...", Left = 15, Top = 48, Width = 190 };
         _setHotkeyButton.Click += (_, _) =>
@@ -55,7 +79,7 @@ sealed class SettingsForm : Form
         };
         hotkeyGroup.Controls.AddRange(new Control[] { _hotkeyLabel, _setHotkeyButton });
 
-        var returnGroup = new GroupBox { Text = "Auto-return", Left = 15, Top = 210, Width = 350, Height = 150 };
+        var returnGroup = new GroupBox { Text = "Auto-return", Left = 15, Top = 280, Width = 350, Height = 150 };
         _autoReturnCheck = new CheckBox
         {
             Text = "Return when the pointer comes back to this edge",
@@ -104,7 +128,7 @@ sealed class SettingsForm : Form
         travelValue.Enabled = _autoReturnCheck.Checked;
         returnGroup.Controls.AddRange(new Control[] { _autoReturnCheck, travelLabel, travelValue, _travelBar, travelHint });
 
-        var speedGroup = new GroupBox { Text = "Speed", Left = 15, Top = 370, Width = 350, Height = 150 };
+        var speedGroup = new GroupBox { Text = "Speed", Left = 15, Top = 440, Width = 350, Height = 150 };
 
         var mouseSpeedValue = new Label { Left = 250, Top = 22, Width = 85, TextAlign = ContentAlignment.TopRight };
         _mouseSpeedBar = MakeSpeedBar(settings.MouseSensitivityPercent, 40);
@@ -130,7 +154,7 @@ sealed class SettingsForm : Form
         {
             Text = "Reverse scroll direction (both axes)",
             Left = 30,
-            Top = 530,
+            Top = 600,
             Width = 300,
             Checked = settings.InvertScroll
         };
@@ -139,7 +163,7 @@ sealed class SettingsForm : Form
         {
             Text = firstRun ? "Start" : "Save",
             Left = 270,
-            Top = 558,
+            Top = 628,
             Width = 95,
             DialogResult = DialogResult.OK
         };
@@ -149,7 +173,7 @@ sealed class SettingsForm : Form
         {
             Text = "Cancel",
             Left = 165,
-            Top = 558,
+            Top = 628,
             Width = 95,
             DialogResult = DialogResult.Cancel
         };
@@ -235,6 +259,7 @@ sealed class SettingsForm : Form
         _settings.ReturnHotkeyVk = (int)_hotkey;
         _settings.AutoReturnEnabled = _autoReturnCheck.Checked;
         _settings.VirtualTravelCounts = _travelBar.Value;
+        _settings.EdgePushCounts = _edgePushBar.Value;
         _settings.InvertScroll = _invertScrollCheck.Checked;
         _settings.MouseSensitivityPercent = _mouseSpeedBar.Value;
         _settings.ScrollSpeedPercent = _scrollSpeedBar.Value;

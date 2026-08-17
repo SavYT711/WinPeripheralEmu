@@ -12,19 +12,41 @@ The app ships as **BlePeripheralEmu** — a tray application with no console win
 The PC advertises itself as a BLE HID-over-GATT peripheral exposing a combo
 keyboard (Report ID 1) and mouse (Report ID 2), alongside Device Information and
 Battery services. Once the iPad pairs with it, the app watches for the pointer
-reaching your configured screen edge:
+being pushed against your configured screen edge:
 
-- **Before handoff** — a low-level mouse hook only watches for the edge crossing.
+- **Before handoff** — a low-level mouse hook watches for the pointer touching
+  the edge. Touching it does nothing on its own: control only crosses over once
+  you keep pushing outward for a configurable distance. Because the cursor is
+  clamped at the screen boundary, that continued push still registers as raw
+  movement while the pointer sits still. Without this, screen edges would be
+  unusable for what they're normally for — the taskbar sits on one, and
+  maximised windows put their controls on another.
 - **After handoff** — mouse and keyboard input are suppressed locally and
   forwarded over BLE instead. Movement comes from Raw Input, so deltas aren't
-  clamped by the screen boundary the cursor is parked against.
-- **Returning** — press the configured hotkey (F9 by default), move the pointer
-  back across the edge it left from, or let the app notice the iPad
+  clamped by the screen boundary the cursor is parked against. An invisible
+  full-desktop window is placed under the cursor and the cursor is hidden; see
+  below for why.
+- **Returning** — press the configured hotkey (F9 by default), push the pointer
+  back against the edge it left from, or let the app notice the iPad
   disconnecting.
 
 Because the iPad never reports its pointer position back, the position on the
 far side is dead-reckoned from the deltas already sent, and clamped to a
 configurable travel distance. Scrolling never moves that estimate.
+
+### Why the invisible overlay
+
+A `WH_MOUSE_LL` hook can only suppress the legacy message pipeline. Windows
+routes precision-touchpad panning through the modern pointer / DirectManipulation
+stack for apps that support it — Edge, Chrome, File Explorer, most UWP — and that
+input is neither visible to the hook nor blockable by it. `RIDEV_INPUTSINK`
+doesn't help either: raw input is a sink, copying input to us without consuming
+it. The result was two-finger scrolling reaching the iPad and the laptop at the
+same time.
+
+Pointer input is routed to the window under the cursor, so while redirected the
+app parks a transparent, non-activating, full-virtual-desktop window there. The
+leaked gestures land on a window that does nothing with them.
 
 Corner calibration lets you mark the four screen corners so the handoff boundary
 matches the physical display rather than the reported resolution.

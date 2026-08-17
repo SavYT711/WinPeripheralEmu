@@ -29,6 +29,12 @@ sealed class InputBridgeForm : Form
     /// </summary>
     const int ReturnArmDistance = 200;
 
+    /// <summary>
+    /// Push against the edge decays if the user pauses, so resting the pointer
+    /// on the taskbar can't slowly creep up to the handoff threshold.
+    /// </summary>
+    const int EdgePressureIdleResetMs = 500;
+
     /// <summary>Auto-return stays disabled for this long after any scroll activity.</summary>
     const int ScrollBlocksAutoReturnMs = 800;
 
@@ -87,10 +93,19 @@ sealed class InputBridgeForm : Form
     readonly HashSet<int> _suppressUpVks = new();
     byte _modifiers;
 
-    // Auto-return: dead-reckoned distance out from the edge we crossed.
+    // Handoff: the pointer is resting against the edge, accumulating push.
+    bool _atEdge;
+    int _edgePressure;
+    long _lastEdgePressureTicks;
+
+    // Auto-return: dead-reckoned distance out from the edge we crossed, plus
+    // the push accumulated once it's back against that edge.
     int _virtualOutward;
+    int _returnPressure;
     bool _returnArmed;
     long _lastScrollTicks;
+
+    SuppressionOverlayForm? _suppressionOverlay;
 
     // Sub-unit remainders from the sensitivity multiplier, kept so slow
     // movement at low sensitivity isn't truncated away to nothing.
@@ -502,6 +517,8 @@ sealed class InputBridgeForm : Form
         StopCalibrationTimeout();
         _calibrationOverlay?.Close();
         _calibrationOverlay?.Dispose();
+        _suppressionOverlay?.Close();
+        _suppressionOverlay?.Dispose();
 
         _mousePump.Dispose();
         _keyboardPump.Dispose();
@@ -520,7 +537,10 @@ sealed class InputBridgeForm : Form
 
     void HandleRawInput(IntPtr hRawInput)
     {
-        if (!_redirected) return;
+        // Also runs while merely resting against the edge: measuring push
+        // needs raw deltas, which keep arriving after the cursor has stopped
+        // moving because it's clamped to the screen boundary.
+        if (!_redirected && !_atEdge) return;
 
         uint size = 0;
         GetRawInputData(hRawInput, RID_INPUT, IntPtr.Zero, ref size, (uint)Marshal.SizeOf<RAWINPUTHEADER>());
@@ -545,6 +565,15 @@ sealed class InputBridgeForm : Form
     void HandleRawMouse(IntPtr buffer)
     {
         var raw = Marshal.PtrToStructure<RAWINPUT>(buffer);
+
+        if (!_redirected)
+        {
+            // Against the edge but not handed off yet. Local input is being
+            // left alone; the only thing happening here is measuring push.
+            if ((raw.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0)
+                TrackEdgePressure(raw.mouse.lLastX, raw.mouse.lLastY);
+            return;
+        }
 
         var flags = raw.mouse.usButtonFlags;
         if ((flags & RI_MOUSE_LEFT_BUTTON_DOWN) != 0) _currentButtons |= 0x01;
@@ -604,6 +633,86 @@ sealed class InputBridgeForm : Form
     }
 
     /// <summary>
+    /// Movement projected onto the "away from the crossing point" axis for
+    /// whichever edge is in use, so handoff and return work the same way for
+    /// all four.
+    /// </summary>
+    int OutwardComponent(int dx, int dy) => _settings.Edge switch
+    {
+        ScreenEdge.Right => dx,
+        ScreenEdge.Left => -dx,
+        ScreenEdge.Bottom => dy,
+        ScreenEdge.Top => -dy,
+        _ => 0
+    };
+
+    /// <summary>
+    /// Accumulates deliberate push against the edge, and hands off once it's
+    /// unmistakable.
+    ///
+    /// Handoff used to fire the moment the pointer touched the boundary, which
+    /// made that edge unusable for anything else - with the edge set to Bottom,
+    /// every trip to the taskbar threw control onto the iPad. Because the
+    /// cursor is clamped at the screen boundary, continued movement outward
+    /// still produces raw deltas while the pointer sits still, and that is
+    /// exactly the "pushing against it" signal.
+    /// </summary>
+    void TrackEdgePressure(int dx, int dy)
+    {
+        long now = Environment.TickCount64;
+        if (now - _lastEdgePressureTicks > EdgePressureIdleResetMs) _edgePressure = 0;
+        _lastEdgePressureTicks = now;
+
+        int outward = OutwardComponent(dx, dy);
+        if (outward == 0) return;
+
+        // Pulling away erodes progress faster than pushing builds it, so
+        // movement along the edge rather than into it never accumulates.
+        _edgePressure = outward > 0
+            ? _edgePressure + outward
+            : Math.Max(0, _edgePressure + outward * 2);
+
+        if (_edgePressure >= _settings.EdgePush)
+        {
+            Logger.Log($"[handoff: edge pressure {_edgePressure} >= {_settings.EdgePush}]");
+            BeginHandoff();
+        }
+    }
+
+    /// <summary>
+    /// Runs on the UI thread from WndProc rather than inside the mouse hook,
+    /// which is what makes it safe to put a window on screen here.
+    /// </summary>
+    void BeginHandoff()
+    {
+        _redirected = true;
+        _atEdge = false;
+        _edgePressure = 0;
+        _currentButtons = 0;
+        _virtualOutward = 0;
+        _returnPressure = 0;
+        _returnArmed = false;
+
+        ShowSuppressionOverlay();
+        UpdateStatusTextAsync();
+        Logger.Log($"[handed off to iPad - press {(Keys)_settings.ReturnHotkeyVk} to return]");
+    }
+
+    void ShowSuppressionOverlay()
+    {
+        _suppressionOverlay ??= new SuppressionOverlayForm();
+        _suppressionOverlay.ShowOverlay();
+        Logger.Log("[suppression overlay shown]");
+    }
+
+    void HideSuppressionOverlay()
+    {
+        if (_suppressionOverlay is null) return;
+        _suppressionOverlay.HideOverlay();
+        Logger.Log("[suppression overlay hidden]");
+    }
+
+    /// <summary>
     /// Tracks how far out from the crossed edge the pointer has travelled, and
     /// hands control back when it comes home past that edge - the same boundary
     /// crossing that triggered the handoff, just in reverse.
@@ -622,19 +731,16 @@ sealed class InputBridgeForm : Form
         // it shouldn't move the tracked position at all.
         if (Environment.TickCount64 - _lastScrollTicks < ScrollBlocksAutoReturnMs) return;
 
-        // Project movement onto the "away from the crossing point" axis for
-        // whichever edge is in use, so this works the same for all four.
-        int outward = _settings.Edge switch
-        {
-            ScreenEdge.Right => dx,
-            ScreenEdge.Left => -dx,
-            ScreenEdge.Bottom => dy,
-            ScreenEdge.Top => -dy,
-            _ => 0
-        };
+        int outward = OutwardComponent(dx, dy);
         if (outward == 0) return;
 
-        _virtualOutward = Math.Clamp(_virtualOutward + outward, 0, _settings.TravelCounts);
+        // Movement that would take the pointer past the near edge has nowhere
+        // left to go, so it counts as push instead - the mirror image of the
+        // push that triggered the handoff, and it makes crossing back feel the
+        // same as crossing over rather than firing on the first stray twitch.
+        int next = _virtualOutward + outward;
+        _returnPressure = next < 0 ? _returnPressure - next : 0;
+        _virtualOutward = Math.Clamp(next, 0, _settings.TravelCounts);
 
         if (!_returnArmed)
         {
@@ -642,9 +748,9 @@ sealed class InputBridgeForm : Form
             return;
         }
 
-        if (_virtualOutward <= 0)
+        if (_returnPressure >= _settings.EdgePush)
         {
-            Logger.Log("[auto-return: pointer came back past the edge]");
+            Logger.Log($"[auto-return: pushed back past the edge ({_returnPressure})]");
             ReturnToWindows();
         }
     }
@@ -846,6 +952,10 @@ sealed class InputBridgeForm : Form
         Logger.Log("[ReturnToWindows() called]");
         _redirected = false;
 
+        // Single choke point for the hotkey, auto-return and BLE-disconnect
+        // paths, so taking the overlay down here covers all three.
+        HideSuppressionOverlay();
+
         // Any key still physically held was swallowed on the way down; swallow
         // its key-up too so Windows doesn't see an orphaned release.
         foreach (int vk in _heldVks) _suppressUpVks.Add(vk);
@@ -854,7 +964,10 @@ sealed class InputBridgeForm : Form
 
         _modifiers = 0;
         _currentButtons = 0;
+        _atEdge = false;
+        _edgePressure = 0;
         _virtualOutward = 0;
+        _returnPressure = 0;
         _returnArmed = false;
         _mouseRemainderX = _mouseRemainderY = 0;
         _osWheelAccumulator = _osHWheelAccumulator = 0;
@@ -915,17 +1028,19 @@ sealed class InputBridgeForm : Form
             if (msg == WM_MOUSEMOVE)
             {
                 var hookStruct = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
-                if (IsAtEdge(hookStruct.pt))
+                bool atEdge = IsAtEdge(hookStruct.pt);
+                if (atEdge != _atEdge)
                 {
-                    _redirected = true;
-                    _currentButtons = 0;
-                    _virtualOutward = 0;
-                    _returnArmed = false;
-                    UpdateStatusTextAsync();
-                    Logger.Log($"[handed off to iPad - press {(Keys)_settings.ReturnHotkeyVk} to return]");
-                    return (IntPtr)1;
+                    _atEdge = atEdge;
+                    _edgePressure = 0;
+                    _lastEdgePressureTicks = Environment.TickCount64;
                 }
             }
+
+            // Nothing is suppressed until the handoff actually happens, so the
+            // edge stays fully usable - the taskbar, a maximised window's close
+            // button, an auto-hide bar. The decision to hand off is made in
+            // TrackEdgePressure once the push is unambiguous.
             return CallNextHookEx(_mouseHookId, nCode, wParam, lParam);
         }
 

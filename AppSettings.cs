@@ -54,6 +54,23 @@ sealed class AppSettings
     [JsonIgnore]
     public int TravelCounts => Math.Clamp(VirtualTravelCounts, MinTravelCounts, MaxTravelCounts);
 
+    /// <summary>
+    /// How hard the pointer must be pushed against the edge, in raw mouse
+    /// counts, before control crosses over - and equally, how hard it must be
+    /// pushed back to return.
+    ///
+    /// Reaching the edge alone used to hand off immediately, which made screen
+    /// edges unusable for what they're normally for: the taskbar sits on one,
+    /// and maximised windows put their controls on another.
+    /// </summary>
+    public int EdgePushCounts { get; set; } = 250;
+
+    public const int MinEdgePush = 50;
+    public const int MaxEdgePush = 800;
+
+    [JsonIgnore]
+    public int EdgePush => Math.Clamp(EdgePushCounts, MinEdgePush, MaxEdgePush);
+
     /// <summary>Flips two-finger / wheel scroll direction, both axes.</summary>
     public bool InvertScroll { get; set; }
 

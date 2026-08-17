@@ -14,7 +14,7 @@
 ; as a GitHub Release asset instead of the raw .exe.
 
 #define MyAppName "BlePeripheralEmu"
-#define MyAppVersion "2.0.0"
+#define MyAppVersion "2.1.0"
 #define MyAppPublisher "SavYT711"
 #define MyAppExeName "BlePeripheralEmu.exe"
 #define MyPublishDir "bin\Release\net8.0-windows10.0.19041.0\win-x64\publish"
