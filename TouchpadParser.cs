@@ -1,9 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
-using static BlePeripheralPoc.NativeMethods;
+using static BlePeripheralEmu.NativeMethods;
 
-namespace BlePeripheralPoc;
+namespace BlePeripheralEmu;
 
 readonly record struct TouchContact(int Id, int X, int Y);
 

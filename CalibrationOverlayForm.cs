@@ -1,7 +1,7 @@
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace BlePeripheralPoc;
+namespace BlePeripheralEmu;
 
 /// <summary>
 /// Semi-transparent overlay shown during corner calibration. Purely visual -

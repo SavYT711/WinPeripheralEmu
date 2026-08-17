@@ -1,5 +1,5 @@
 using System.Windows.Forms;
-using BlePeripheralPoc;
+using BlePeripheralEmu;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Storage.Streams;
@@ -9,7 +9,7 @@ using Windows.Storage.Streams;
 // real trackpad/keyboard passthrough bridge with edge-of-screen handoff.
 //
 // Settings (edge, return hotkey, auto-return, scroll direction) and the
-// four-corner calibration persist to %APPDATA%\iPad Bridge\settings.json,
+// four-corner calibration persist to %APPDATA%\BlePeripheralEmu\settings.json,
 // so the setup dialog only appears on first run; it's reachable any time
 // from the tray icon afterwards.
 //
@@ -63,13 +63,13 @@ Application.SetCompatibleTextRenderingDefault(false);
 // Two copies would fight over the low-level hooks and both advertise as
 // HID peripherals. Easy to end up with, given the installer offers both a
 // desktop shortcut and a run-at-startup entry.
-using var singleInstance = new Mutex(true, @"Local\iPadBridge.SingleInstance", out bool isOnlyInstance);
+using var singleInstance = new Mutex(true, @"Local\BlePeripheralEmu.SingleInstance", out bool isOnlyInstance);
 if (!isOnlyInstance)
 {
     Logger.Log("Another instance is already running. Exiting.");
     MessageBox.Show(
-        "iPad Bridge is already running - look for it in the system tray.",
-        "iPad Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        "BlePeripheralEmu is already running - look for it in the system tray.",
+        "BlePeripheralEmu", MessageBoxButtons.OK, MessageBoxIcon.Information);
     return;
 }
 
@@ -178,7 +178,7 @@ try
         MessageBox.Show(
             "This PC's Bluetooth adapter doesn't support peripheral mode, or no adapter was found.\n\n" +
             "Check debug.log for details.",
-            "iPad Bridge - Can't start", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            "BlePeripheralEmu - Can't start", MessageBoxButtons.OK, MessageBoxIcon.Error);
         return;
     }
 
@@ -192,7 +192,7 @@ try
             (hidResult.Error == BluetoothError.RadioNotAvailable
                 ? "This usually means Bluetooth is turned off. Turn it on and try again."
                 : "Check debug.log for details."),
-            "iPad Bridge - Can't start", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            "BlePeripheralEmu - Can't start", MessageBoxButtons.OK, MessageBoxIcon.Error);
         return;
     }
     var hidProvider = hidResult.ServiceProvider;
@@ -318,6 +318,6 @@ catch (Exception ex)
 {
     Logger.Log($"[FATAL] Startup failed: {ex}");
     MessageBox.Show(
-        $"iPad Bridge couldn't start:\n\n{ex.Message}\n\nSee debug.log next to the app for details.",
-        "iPad Bridge - Can't start", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        $"BlePeripheralEmu couldn't start:\n\n{ex.Message}\n\nSee debug.log next to the app for details.",
+        "BlePeripheralEmu - Can't start", MessageBoxButtons.OK, MessageBoxIcon.Error);
 }

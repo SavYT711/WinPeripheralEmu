@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace BlePeripheralPoc;
+namespace BlePeripheralEmu;
 
 [StructLayout(LayoutKind.Sequential)]
 struct POINT

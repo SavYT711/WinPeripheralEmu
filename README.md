@@ -5,7 +5,7 @@ devices. Slide the pointer into a chosen screen edge and your real trackpad and
 keyboard are redirected to a nearby device (an iPad, in practice); a hotkey or a
 swipe back toward the edge returns control to Windows.
 
-The app ships as **iPad Bridge** — a tray application with no console window.
+The app ships as **BlePeripheralEmu** — a tray application with no console window.
 
 ## How it works
 
@@ -55,7 +55,7 @@ lands in `installer_output/` (git-ignored — upload it as a release asset).
 
 ## Settings and diagnostics
 
-- Settings and calibration: `%APPDATA%\iPad Bridge\settings.json`.
+- Settings and calibration: `%APPDATA%\BlePeripheralEmu\settings.json`.
   Reachable any time from the tray icon; the setup dialog only appears on first run.
 - Diagnostic log: `debug.log` next to the executable, rotated to `debug.log.old`
   past 2 MB.

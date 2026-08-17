@@ -4,7 +4,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
-using static BlePeripheralPoc.NativeMethods;
+using static BlePeripheralEmu.NativeMethods;
 
 // Windows.Foundation is deliberately not imported: it defines its own Point,
 // which collides with System.Drawing.Point used throughout the WinForms code.
@@ -12,7 +12,7 @@ using SessionStatusHandler = Windows.Foundation.TypedEventHandler<
     Windows.Devices.Bluetooth.GenericAttributeProfile.GattSession,
     Windows.Devices.Bluetooth.GenericAttributeProfile.GattSessionStatusChangedEventArgs>;
 
-namespace BlePeripheralPoc;
+namespace BlePeripheralEmu;
 
 /// <summary>
 /// Hidden window hosting the input bridge: global mouse/keyboard hooks for
@@ -222,7 +222,7 @@ sealed class InputBridgeForm : Form
         {
             Logger.Log("[BLE disconnect detected while redirected - returning control to Windows]");
             ReturnToWindows();
-            _trayIcon?.ShowBalloonTip(4000, "iPad Bridge",
+            _trayIcon?.ShowBalloonTip(4000, "BlePeripheralEmu",
                 "iPad disconnected - control returned to Windows.", ToolTipIcon.Warning);
         }
     }
@@ -254,7 +254,7 @@ sealed class InputBridgeForm : Form
         _trayIcon = new NotifyIcon
         {
             Icon = SystemIcons.Application,
-            Text = "iPad Bridge",
+            Text = "BlePeripheralEmu",
             Visible = true,
             ContextMenuStrip = menu
         };
@@ -399,7 +399,7 @@ sealed class InputBridgeForm : Form
                 "Those four points are too close together to describe the screen.\n\n" +
                 "Calibration was discarded - the app will use the screen edges instead. " +
                 "You can try again from the tray icon.",
-                "iPad Bridge", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                "BlePeripheralEmu", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 

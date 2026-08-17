@@ -3,7 +3,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace BlePeripheralPoc;
+namespace BlePeripheralEmu;
 
 enum ScreenEdge
 {
@@ -20,7 +20,7 @@ sealed class SavedPoint
 }
 
 /// <summary>
-/// User configuration, persisted to %APPDATA%\iPad Bridge\settings.json.
+/// User configuration, persisted to %APPDATA%\BlePeripheralEmu\settings.json.
 /// Previously nothing was persisted, so every launch re-prompted for the
 /// edge/hotkey and re-ran the four-corner calibration.
 /// </summary>
@@ -80,6 +80,15 @@ sealed class AppSettings
     [JsonIgnore]
     public static string SettingsPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "BlePeripheralEmu",
+        "settings.json");
+
+    /// <summary>
+    /// Where settings lived when the app was called "iPad Bridge". Read once, so
+    /// the rename doesn't silently throw away an existing calibration.
+    /// </summary>
+    static readonly string LegacySettingsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "iPad Bridge",
         "settings.json");
 
@@ -92,26 +101,36 @@ sealed class AppSettings
 
     public static AppSettings Load()
     {
+        var loaded = TryLoadFrom(SettingsPath);
+
+        if (loaded is null && TryLoadFrom(LegacySettingsPath) is { } migrated)
+        {
+            Logger.Log("[migrated settings from the previous iPad Bridge location]");
+            migrated.Save();
+            return migrated;
+        }
+
+        return loaded ?? new AppSettings { IsFirstRun = true };
+    }
+
+    static AppSettings? TryLoadFrom(string path)
+    {
         try
         {
-            if (File.Exists(SettingsPath))
-            {
-                var json = File.ReadAllText(SettingsPath);
-                var loaded = JsonSerializer.Deserialize(json, SettingsJsonContext.Default.AppSettings);
-                if (loaded is not null)
-                {
-                    loaded.Validate();
-                    Logger.Log($"[settings loaded from {SettingsPath}]");
-                    return loaded;
-                }
-            }
+            if (!File.Exists(path)) return null;
+
+            var loaded = JsonSerializer.Deserialize(File.ReadAllText(path), SettingsJsonContext.Default.AppSettings);
+            if (loaded is null) return null;
+
+            loaded.Validate();
+            Logger.Log($"[settings loaded from {path}]");
+            return loaded;
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
-            Logger.Log($"[settings load failed, using defaults: {ex.Message}]");
+            Logger.Log($"[settings load failed from {path}, using defaults: {ex.Message}]");
+            return null;
         }
-
-        return new AppSettings { IsFirstRun = true };
     }
 
     public void Save()

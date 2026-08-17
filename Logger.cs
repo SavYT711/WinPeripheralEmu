@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text;
 
-namespace BlePeripheralPoc;
+namespace BlePeripheralEmu;
 
 /// <summary>
 /// Append-only diagnostic log written next to the .exe. There's no console

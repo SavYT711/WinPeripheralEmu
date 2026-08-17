@@ -1,6 +1,6 @@
 using System.Windows.Forms;
 
-namespace BlePeripheralPoc;
+namespace BlePeripheralEmu;
 
 /// <summary>
 /// Setup dialog: which screen edge hands off, the return-to-Windows hotkey,
@@ -27,7 +27,7 @@ sealed class SettingsForm : Form
         _settings = settings;
         _hotkey = (Keys)settings.ReturnHotkeyVk;
 
-        Text = firstRun ? "iPad Bridge Setup" : "iPad Bridge Settings";
+        Text = firstRun ? "BlePeripheralEmu Setup" : "BlePeripheralEmu Settings";
         ClientSize = new Size(380, 595);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
