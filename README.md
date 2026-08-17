@@ -1,9 +1,9 @@
 # WinPeripheralEmu
 
 A Windows mouse and keyboard emulated as a Bluetooth peripheral for use across
-devices. Slide the pointer into a chosen screen edge and your real trackpad and
-keyboard are redirected to a nearby device (an iPad, in practice); a hotkey or a
-swipe back toward the edge returns control to Windows.
+devices. Push the pointer against a chosen screen edge and your real trackpad and
+keyboard are redirected to a nearby device (an iPad, in practice); a hotkey, or
+pushing back against that same edge, returns control to Windows.
 
 The app ships as **BlePeripheralEmu** — a tray application with no console window.
 
@@ -88,9 +88,12 @@ matches the physical display rather than the reported resolution.
 | [InputBridgeForm.cs](InputBridgeForm.cs) | Hooks, Raw Input, handoff/return, calibration, tray icon |
 | [HidHelpers.cs](HidHelpers.cs) | Characteristic creation and the serialised report pumps |
 | [TouchpadParser.cs](TouchpadParser.cs) | Precision Touchpad raw HID contact decoding |
+| [ClipboardTyper.cs](ClipboardTyper.cs) | Clipboard-to-keystroke mapping and pacing |
 | [AppSettings.cs](AppSettings.cs) | Persisted configuration |
 | [SettingsForm.cs](SettingsForm.cs) | Setup dialog |
 | [CalibrationOverlayForm.cs](CalibrationOverlayForm.cs) | Corner calibration overlay |
+| [SuppressionOverlayForm.cs](SuppressionOverlayForm.cs) | Transparent input sink shown while redirected |
+| [Logger.cs](Logger.cs) | Diagnostic log with rotation |
 | [NativeMethods.cs](NativeMethods.cs) | Win32/HID P/Invoke declarations |
 
 ## Known limitations
